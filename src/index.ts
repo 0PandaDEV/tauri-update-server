@@ -9,7 +9,7 @@ import QuickLRU from 'quick-lru';
 const config = yamlParse(fs.readFileSync('./config.yml', 'utf8')) as any;
 
 const app = express();
-const PORT = config.port || 3000;
+const PORT = 3000;
 
 if (!config.github.release_repo || !config.github.archive_repo) {
   throw new Error('GitHub release_repo and archive_repo must be set in the config.yml file');

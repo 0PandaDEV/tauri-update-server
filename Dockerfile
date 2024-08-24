@@ -12,6 +12,6 @@ RUN rm -rf ./cache
 
 RUN bunx tsc
 
-EXPOSE 3004
+EXPOSE 3000
 
 CMD ["bun", "start"]

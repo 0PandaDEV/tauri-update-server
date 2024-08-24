@@ -23,6 +23,4 @@ enabled_platforms:
   windows: true
   macos_intel: true # macos intel (before 2020)
   macos_silicon: true # macos silicon (M1/M2/M3...)
-
-port: 3000 # server port
 ```
