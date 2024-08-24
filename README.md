@@ -2,11 +2,16 @@
 This is a modern implementation of a tauri update server. It works enterly over github by using a seperate repo for all the release files.
 
 ### Get started
-To get started click the green button to create a new reposetory with this one as a template
+To get started clone the reposetory from the github packages like this: 
 
-<a href="https://github.com/new?template_name=tauri-update-server&template_owner=0PandaDEV">
-  <img src="https://github.com/user-attachments/assets/c63cbd4c-9152-4b6f-9edc-15e78beb4c66" alt="Streamshare Download Page">
-</a>
+```bash
+docker run -d --name tauri-update-server \
+-p 3000:3000 \
+-v /path/to/your/config.yml:/app/config.yml \
+ghcr.io/0pandadev/tauri-update-server:latest
+```
+
+Change `/path/to/your/config.yml` to the path on your disk where the config.yml is stored also change the left half of the port **3001**:3000 to your liking.
 
 ### Config
 Take a look at the `config.yml` file for configuration.

@@ -15,3 +15,5 @@ RUN bunx tsc
 EXPOSE 3000
 
 CMD ["bun", "start"]
+
+VOLUME /app
