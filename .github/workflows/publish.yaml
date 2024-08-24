@@ -8,7 +8,7 @@ on:
 
 env:
   GITHUB_REGISTRY: ghcr.io
-  GITHUB_IMAGE_NAME: ${{ github.repository_owner }}/tauri-update-server
+  GITHUB_IMAGE_NAME: 0pandadev/tauri-update-server
 
 jobs:
   build-and-push:
@@ -36,4 +36,4 @@ jobs:
           context: .
           push: true
           tags: |
-            ${{ env.GITHUB_REGISTRY }}/${{ lowercase(env.GITHUB_IMAGE_NAME) }}:latest
+            ${{ env.GITHUB_REGISTRY }}/${{ env.GITHUB_IMAGE_NAME }}:latest
