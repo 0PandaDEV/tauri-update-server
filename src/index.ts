@@ -3,43 +3,38 @@ import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const app = express();
-const PORT = 3004;
-const GITHUB_RELEASES_URL = 'https://api.github.com/repos/vleerapp/vleer/releases';
-const GITHUB_ARCHIVES_URL = 'https://api.github.com/repos/vleerapp/archives/contents/';
+const PORT = process.env.PORT || 3000;
+
+if (!process.env.GITHUB_RELEASE_REPO || !process.env.GITHUB_ARCHIVE_REPO) {
+  throw new Error('GITHUB_RELEASE_REPO and GITHUB_ARCHIVE_REPO must be set in the .env file');
+}
+
+const GITHUB_RELEASES_URL = `https://api.github.com/repos/${process.env.GITHUB_RELEASE_REPO}/releases`;
+const GITHUB_ARCHIVES_URL = `https://api.github.com/repos/${process.env.GITHUB_ARCHIVE_REPO}/contents/`;
+const GITHUB_ARCHIVE_REPO = process.env.GITHUB_ARCHIVE_REPO;
+
 const CACHE_FILE = './cache/data.json';
 const STATS_FILE = './cache/stats.json';
 const ETAG_FILE = './cache/etag.json';
 
+const ENABLED_PLATFORMS = {
+  'linux-x86_64': process.env.ENABLE_LINUX !== 'false',
+  'windows-x86_64': process.env.ENABLE_WINDOWS !== 'false',
+  'darwin-x86_64': process.env.ENABLE_MACOS_INTEL !== 'false',
+  'darwin-aarch64': process.env.ENABLE_MACOS_SILICON !== 'false',
+};
+
 const readFileAsync = promisify(fs.readFile);
 const writeFileAsync = promisify(fs.writeFile);
 
-interface Release {
-  tag_name: string;
-  published_at: string;
-}
-
 interface File {
   name: string;
-  signature: string;
   url: string;
-}
-
-interface PlatformFiles {
-  [key: string]: { signature: string; url: string };
-}
-
-interface CacheData {
-  version: string;
-  notes: string;
-  pub_date: string;
-  platforms: PlatformFiles;
-}
-
-interface StatsData {
-  cacheHits: number;
-  fetches: number;
 }
 
 const ensureFileExists = async (filePath: string) => {
@@ -55,45 +50,42 @@ const ensureFileExists = async (filePath: string) => {
 async function fetchGitHubData() {
   const releasesResponse = await axios.get(GITHUB_RELEASES_URL);
   const latestRelease = releasesResponse.data[0];
-  const etag = releasesResponse.headers.etag; 
+  const etag = releasesResponse.headers.etag;
 
   await writeFileAsync(ETAG_FILE, JSON.stringify({ etag }));
 
   const filesResponse = await axios.get(`${GITHUB_ARCHIVES_URL}${latestRelease.tag_name}`);
   const files: File[] = filesResponse.data.map((file: any) => ({
     name: file.name,
-    signature: '',
-    url: `https://github.com/vleerapp/archives/raw/main/${latestRelease.tag_name}/${file.name}`
+    url: `https://github.com/${GITHUB_ARCHIVE_REPO}/raw/main/${latestRelease.tag_name}/${file.name}`
   }));
 
   const platformFiles: { [key: string]: { signature: string; url: string; } } = {};
   await Promise.all(files.map(async (file: File) => {
     const platformKey = determinePlatform(file.name);
 
-    if (file.name.endsWith('.sig')) {
-      const baseFileName = file.name.replace('.sig', '');
-      const baseFileKey = determinePlatform(baseFileName);
-
-      if (platformFiles[baseFileKey]) {
-        platformFiles[baseFileKey].signature = await fetchSignature(file.url);
-      }
-    } else {
-      if (!platformFiles[platformKey]) {
-        platformFiles[platformKey] = { signature: '', url: file.url };
+    if (ENABLED_PLATFORMS[platformKey as keyof typeof ENABLED_PLATFORMS]) {
+      if (file.name.endsWith('.sig')) {
+        if (platformFiles[platformKey]) {
+          platformFiles[platformKey].signature = await fetchSignature(file.url);
+        }
+      } else {
+        if (!platformFiles[platformKey]) {
+          platformFiles[platformKey] = { signature: '', url: file.url };
+        }
       }
     }
   }));
 
-  const orderedPlatforms = {
-    'linux-x86_64': platformFiles['linux-x86_64'] || {},
-    'windows-x86_64': platformFiles['windows-x86_64'] || {},
-    'darwin-x86_64': platformFiles['darwin-x86_64'] || {},
-    'darwin-aarch64': platformFiles['darwin-aarch64'] || {}
-  };
+  const orderedPlatforms = Object.fromEntries(
+    Object.entries(ENABLED_PLATFORMS)
+      .filter(([_, enabled]) => enabled)
+      .map(([key]) => [key, platformFiles[key] || {}])
+  );
 
   const cacheData = {
     version: latestRelease.tag_name,
-    notes: "A new version of Vleer is available",
+    notes: "A new version is available",
     pub_date: latestRelease.published_at,
     platforms: orderedPlatforms
   };
@@ -102,7 +94,9 @@ async function fetchGitHubData() {
 }
 
 function determinePlatform(filename: string): string {
-  if (filename.endsWith('.AppImage')) {
+  if (filename.endsWith('.sig')) {
+    return determinePlatform(filename.slice(0, -4));
+  } else if (filename.endsWith('.AppImage')) {
     return 'linux-x86_64';
   } else if (filename.endsWith('.msi')) {
     return 'windows-x86_64';
@@ -143,12 +137,10 @@ app.get('/', async (req: express.Request, res: express.Response) => {
   console.log(`${getTime()} User-Agent: ${userAgent}`);
 
   try {
-    let etagData = JSON.parse(await readFileAsync(ETAG_FILE, { encoding: 'utf8' }));
-
     const latestReleaseResponse = await axios.get(GITHUB_RELEASES_URL, {
       headers: { 'If-None-Match': etagData.etag || '' },
       validateStatus: function (status: number) {
-        return status >= 200 && status < 300 || status === 304; 
+        return status >= 200 && status < 300 || status === 304;
       }
     });
 
@@ -167,7 +159,7 @@ app.get('/', async (req: express.Request, res: express.Response) => {
         console.log(`${getTime()} Fetching new data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
       } catch (fetchError: any) {
         if (fetchError.response && fetchError.response.status === 403) {
-          res.json(cacheData || {}); 
+          res.json(cacheData || {});
           return;
         } else {
           console.error(`${getTime()} Error fetching new data: ${fetchError}`);
