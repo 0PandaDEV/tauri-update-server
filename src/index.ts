@@ -3,9 +3,10 @@ import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import * as yaml from 'js-yaml';
+import { parse as yamlParse } from 'yaml';
+import QuickLRU from 'quick-lru';
 
-const config = yaml.load(fs.readFileSync('./config.yml', 'utf8')) as any;
+const config = yamlParse(fs.readFileSync('./config.yml', 'utf8')) as any;
 
 const app = express();
 const PORT = config.port || 3000;
@@ -36,6 +37,8 @@ interface File {
   name: string;
   url: string;
 }
+
+const cache = new QuickLRU<string, any>({ maxSize: 1000 });
 
 const ensureFileExists = async (filePath: string) => {
   try {
@@ -127,9 +130,9 @@ app.get('/', async (req: express.Request, res: express.Response) => {
   await ensureFileExists(STATS_FILE);
   await ensureFileExists(ETAG_FILE);
 
-  let cacheData = JSON.parse(await readFileAsync(CACHE_FILE, { encoding: 'utf8' }));
-  let statsData = JSON.parse(await readFileAsync(STATS_FILE, { encoding: 'utf8' }));
-  let etagData = JSON.parse(await readFileAsync(ETAG_FILE, { encoding: 'utf8' }));
+  let cacheData = cache.get('cacheData') || JSON.parse(await readFileAsync(CACHE_FILE, { encoding: 'utf8' }));
+  let statsData = cache.get('statsData') || JSON.parse(await readFileAsync(STATS_FILE, { encoding: 'utf8' }));
+  let etagData = cache.get('etagData') || JSON.parse(await readFileAsync(ETAG_FILE, { encoding: 'utf8' }));
 
   const userAgent = req.get('User-Agent') || '';
   const isBetterUptimeBot = userAgent.includes('Better Uptime Bot');
@@ -153,8 +156,10 @@ app.get('/', async (req: express.Request, res: express.Response) => {
       console.log(`${getTime()} Cache is outdated or missing, fetching data.`);
       try {
         cacheData = await fetchGitHubData();
+        cache.set('cacheData', cacheData);
         if (!isBetterUptimeBot) {
           statsData.fetches = (statsData.fetches || 0) + 1;
+          cache.set('statsData', statsData);
         }
         console.log(`${getTime()} Fetching new data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
       } catch (fetchError: any) {
@@ -168,6 +173,7 @@ app.get('/', async (req: express.Request, res: express.Response) => {
     } else {
       if (!isBetterUptimeBot) {
         statsData.cacheHits = (statsData.cacheHits || 0) + 1;
+        cache.set('statsData', statsData);
       }
       console.log(`${getTime()} Using cached data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
     }
@@ -180,6 +186,7 @@ app.get('/', async (req: express.Request, res: express.Response) => {
     console.error(`${getTime()} SERVER IS RATELIMITED: ${error}`);
     if (!isBetterUptimeBot) {
       statsData.cacheHits = statsData.cacheHits ? statsData.cacheHits + 1 : 1;
+      cache.set('statsData', statsData);
       await writeFileAsync(STATS_FILE, JSON.stringify(statsData));
     }
     console.log(`${getTime()} Using cached data - C:${statsData.cacheHits} : F:${statsData.fetches}`);
