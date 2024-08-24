@@ -8,9 +8,10 @@
     "dev": "nodemon --ignore 'cache/*' --exec bun run src/index.ts"
   },
   "dependencies": {
+    "@types/js-yaml": "^4.0.9",
     "axios": "^1.7.5",
-    "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "js-yaml": "^4.1.0",
     "node-cache": "^5.1.2"
   },
   "devDependencies": {

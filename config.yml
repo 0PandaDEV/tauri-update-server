@@ -1,0 +1,11 @@
+github:
+  release_repo: 0pandadev/qopy
+  archive_repo: 0pandadev/qopy-archives
+
+enabled_platforms:
+  linux: true
+  windows: true
+  macos_intel: false
+  macos_silicon: false
+
+port: 3000

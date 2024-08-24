@@ -3,30 +3,30 @@ import axios from 'axios';
 import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
-import dotenv from 'dotenv';
+import * as yaml from 'js-yaml';
 
-dotenv.config();
+const config = yaml.load(fs.readFileSync('./config.yml', 'utf8')) as any;
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = config.port || 3000;
 
-if (!process.env.GITHUB_RELEASE_REPO || !process.env.GITHUB_ARCHIVE_REPO) {
-  throw new Error('GITHUB_RELEASE_REPO and GITHUB_ARCHIVE_REPO must be set in the .env file');
+if (!config.github.release_repo || !config.github.archive_repo) {
+  throw new Error('GitHub release_repo and archive_repo must be set in the config.yml file');
 }
 
-const GITHUB_RELEASES_URL = `https://api.github.com/repos/${process.env.GITHUB_RELEASE_REPO}/releases`;
-const GITHUB_ARCHIVES_URL = `https://api.github.com/repos/${process.env.GITHUB_ARCHIVE_REPO}/contents/`;
-const GITHUB_ARCHIVE_REPO = process.env.GITHUB_ARCHIVE_REPO;
+const GITHUB_RELEASES_URL = `https://api.github.com/repos/${config.github.release_repo}/releases`;
+const GITHUB_ARCHIVES_URL = `https://api.github.com/repos/${config.github.archive_repo}/contents/`;
+const GITHUB_ARCHIVE_REPO = config.github.archive_repo;
 
 const CACHE_FILE = './cache/data.json';
 const STATS_FILE = './cache/stats.json';
 const ETAG_FILE = './cache/etag.json';
 
 const ENABLED_PLATFORMS = {
-  'linux-x86_64': process.env.ENABLE_LINUX !== 'false',
-  'windows-x86_64': process.env.ENABLE_WINDOWS !== 'false',
-  'darwin-x86_64': process.env.ENABLE_MACOS_INTEL !== 'false',
-  'darwin-aarch64': process.env.ENABLE_MACOS_SILICON !== 'false',
+  'linux-x86_64': config.enabled_platforms.linux !== false,
+  'windows-x86_64': config.enabled_platforms.windows !== false,
+  'darwin-x86_64': config.enabled_platforms.macos_intel !== false,
+  'darwin-aarch64': config.enabled_platforms.macos_silicon !== false,
 };
 
 const readFileAsync = promisify(fs.readFile);
