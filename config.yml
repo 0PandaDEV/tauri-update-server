@@ -1,11 +1,13 @@
+# GitHub configuration
 github:
-  release_repo: 0pandadev/qopy
-  archive_repo: 0pandadev/qopy-archives
+  release_repo: 0pandadev/qopy # This should be the repo of your main project)
+  archive_repo: 0pandadev/qopy-archives # This is where all the updater files are stored e.g. Name-v1.0.0.msi.sig, Name-v1.0.0.msi)
 
+# Enabled platforms for which to fetch and serve update files
 enabled_platforms:
   linux: true
   windows: true
-  macos_intel: false
-  macos_silicon: false
+  macos_intel: false # macos intel (before 2020)
+  macos_silicon: false # macos silicon (M1/M2/M3...)
 
-port: 3000
+port: 3000 # server port
