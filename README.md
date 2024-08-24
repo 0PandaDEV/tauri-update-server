@@ -1,6 +1,12 @@
 # Tauri Update Server
 This is a modern implementation of a tauri update server. It works enterly over github by using a seperate repo for all the release files.
 
+### Get started
+To get started click the green button to create a new reposetory with this one as a template
+
+<a href="https://github.com/new?template_name=tauri-update-server&template_owner=0PandaDEV">
+  <img src="https://github.com/user-attachments/assets/c63cbd4c-9152-4b6f-9edc-15e78beb4c66" alt="Streamshare Download Page">
+</a>
 
 ### Config
 Take a look at the `config.yml` file for configuration.
