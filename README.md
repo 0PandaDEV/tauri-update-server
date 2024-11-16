@@ -16,6 +16,8 @@ Change `/path/to/your/config.yml` to the path on your disk where the config.yml 
 ### Config
 Take a look at the `config.yml` file for configuration.
 
+For the archive repo there need to be a specific strucutre for the update server to correctly understand the versions you can find a production example [here](https://github.com/0PandaDEV/qopy-archives).
+
 ```yml
 # GitHub configuration
 github:
