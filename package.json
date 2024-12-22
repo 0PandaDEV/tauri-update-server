@@ -8,15 +8,15 @@
     "dev": "nodemon --ignore 'cache/*' --exec bun run src/index.ts"
   },
   "dependencies": {
-    "axios": "^1.7.5",
-    "express": "^4.19.2",
-    "quick-lru": "^7.0.0",
-    "yaml": "^2.5.0"
+    "axios": "1.7.9",
+    "express": "5.0.1",
+    "quick-lru": "7.0.0",
+    "yaml": "2.6.1"
   },
   "devDependencies": {
-    "@types/express": "^4.17.21",
-    "@types/node": "^22.5.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.5.4"
+    "@types/express": "5.0.0",
+    "@types/node": "22.10.2",
+    "ts-node": "10.9.2",
+    "typescript": "5.7.2"
   }
 }
