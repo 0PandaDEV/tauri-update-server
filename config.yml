@@ -6,6 +6,7 @@ github:
 # Enabled platforms for which to fetch and serve update files
 enabled_platforms:
   linux: true
-  windows: true
-  macos_intel: false # macos intel (before 2020)
-  macos_silicon: false # macos silicon (M1/M2/M3...)
+  windows_x86: true
+  windows_arm64: true
+  macos_intel: true # macos intel (before 2020)
+  macos_silicon: true # macos silicon (M1/M2/M3...)

@@ -25,7 +25,8 @@ const ETAG_FILE = './cache/etag.json';
 
 const ENABLED_PLATFORMS = {
   'linux-x86_64': config.enabled_platforms.linux !== false,
-  'windows-x86_64': config.enabled_platforms.windows !== false,
+  'windows-x86_64': config.enabled_platforms.windows_x86 !== false,
+  'windows-aarch64': config.enabled_platforms.windows_arm64 !== false,
   'darwin-x86_64': config.enabled_platforms.macos_intel !== false,
   'darwin-aarch64': config.enabled_platforms.macos_silicon !== false,
 };
@@ -102,6 +103,9 @@ function determinePlatform(filename: string): string {
   } else if (filename.endsWith('.AppImage')) {
     return 'linux-x86_64';
   } else if (filename.endsWith('.msi')) {
+    if (filename.includes('arm64')) {
+      return 'windows-aarch64';
+    }
     return 'windows-x86_64';
   } else if (filename.endsWith('_intel.app.tar.gz')) {
     return 'darwin-x86_64';
