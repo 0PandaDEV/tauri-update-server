@@ -43,6 +43,7 @@ interface ETagData {
   releases: string;
   archives?: { [tag: string]: string };
   signatures?: { [url: string]: string };
+  lastFetchTime?: number;
 }
 
 const cache = new QuickLRU<string, any>({ maxSize: 1000 });
@@ -196,8 +197,9 @@ app.get('/', async (req: Request, res: Response) => {
 
   let cacheData = cache.get('cacheData') || JSON.parse(await readFileAsync(CACHE_FILE, 'utf8'))
   let statsData = cache.get('statsData') || JSON.parse(await readFileAsync(STATS_FILE, 'utf8'))
-  let etagData = cache.get('etagData') || JSON.parse(await readFileAsync(ETAG_FILE, 'utf8'))
+  let etagData: ETagData = cache.get('etagData') || JSON.parse(await readFileAsync(ETAG_FILE, 'utf8'))
   const now = Date.now()
+  lastFetchTime = etagData.lastFetchTime || 0;
 
   if (cacheData.version && now - lastFetchTime < MIN_FETCH_INTERVAL) {
     if (!isBot) {
@@ -213,7 +215,10 @@ app.get('/', async (req: Request, res: Response) => {
   try {
     cacheData = await fetchGitHubData(etagData)
     lastFetchTime = now
+    etagData.lastFetchTime = lastFetchTime;
     cache.set('cacheData', cacheData)
+    cache.set('etagData', etagData);
+    await writeFileAsync(ETAG_FILE, JSON.stringify(etagData));
 
     if (!isBot) {
       statsData.fetches = (statsData.fetches || 0) + 1
