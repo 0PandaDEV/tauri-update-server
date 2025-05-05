@@ -9,4 +9,4 @@ enabled_platforms:
   windows_x86: true
   windows_arm64: true
   macos_intel: true # macos intel (before 2020)
-  macos_silicon: true # macos silicon (M1/M2/M3...) 
+  macos_silicon: true # macos silicon (M1/M2/M3/M4...) 

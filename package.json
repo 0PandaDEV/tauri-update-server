@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node dist/index.js",
     "build": "bunx tsc",
-    "dev": "nodemon --ignore 'cache/*' --exec bun run src/index.ts"
+    "dev": "bun run --watch src/index.ts"
   },
   "dependencies": {
     "axios": "1.7.9",
