@@ -39,30 +39,59 @@ interface File {
   url: string;
 }
 
+interface ETagData {
+  releases: string;
+  archives?: {[tag: string]: string};
+  signatures?: {[url: string]: string};
+}
+
 const cache = new QuickLRU<string, any>({ maxSize: 1000 });
 
 const ensureFileExists = async (filePath: string) => {
   try {
     await fs.promises.access(filePath, fs.constants.F_OK);
-  } catch (error) {
+  } catch {
     console.log(`File not found: ${filePath}, creating...`);
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
     await fs.promises.writeFile(filePath, '{}');
   }
 };
 
-async function fetchGitHubData() {
-  const releasesResponse = await axios.get(GITHUB_RELEASES_URL);
+async function fetchGitHubData(etagData: ETagData) {
+  const releasesResponse = await axios.get(GITHUB_RELEASES_URL, {
+    headers: { 'If-None-Match': etagData.releases || '' },
+    validateStatus: (status) => status >= 200 && status < 300 || status === 304
+  });
+  
+  if (releasesResponse.status === 304) {
+    return cache.get('cacheData') || JSON.parse(await readFileAsync(CACHE_FILE, { encoding: 'utf8' }));
+  }
+  
   const latestRelease = releasesResponse.data[0];
-  const etag = releasesResponse.headers.etag;
+  etagData.releases = releasesResponse.headers.etag;
+  
+  if (!etagData.archives) etagData.archives = {};
+  if (!etagData.signatures) etagData.signatures = {};
 
-  await writeFileAsync(ETAG_FILE, JSON.stringify({ etag }));
-
-  const filesResponse = await axios.get(`${GITHUB_ARCHIVES_URL}${latestRelease.tag_name}`);
-  const files: File[] = filesResponse.data.map((file: any) => ({
-    name: file.name,
-    url: `https://github.com/${GITHUB_ARCHIVE_REPO}/raw/main/${latestRelease.tag_name}/${file.name}`
-  }));
+  const filesResponse = await axios.get(`${GITHUB_ARCHIVES_URL}${latestRelease.tag_name}`, {
+    headers: { 'If-None-Match': etagData.archives[latestRelease.tag_name] || '' },
+    validateStatus: (status) => status >= 200 && status < 300 || status === 304
+  });
+  
+  let files: File[] = [];
+  
+  if (filesResponse.status !== 304) {
+    etagData.archives[latestRelease.tag_name] = filesResponse.headers.etag;
+    files = filesResponse.data.map((file: any) => ({
+      name: file.name,
+      url: `https://github.com/${GITHUB_ARCHIVE_REPO}/raw/main/${latestRelease.tag_name}/${file.name}`
+    }));
+  } else {
+    const currentData = cache.get('cacheData') || JSON.parse(await readFileAsync(CACHE_FILE, { encoding: 'utf8' }));
+    if (currentData && currentData.version === latestRelease.tag_name) {
+      return currentData;
+    }
+  }
 
   const platformFiles: { [key: string]: { signature: string; url: string; } } = {};
   await Promise.all(files.map(async (file: File) => {
@@ -71,7 +100,7 @@ async function fetchGitHubData() {
     if (ENABLED_PLATFORMS[platformKey as keyof typeof ENABLED_PLATFORMS]) {
       if (file.name.endsWith('.sig')) {
         if (platformFiles[platformKey]) {
-          platformFiles[platformKey].signature = await fetchSignature(file.url);
+          platformFiles[platformKey].signature = await fetchSignature(file.url, etagData);
         }
       } else {
         if (!platformFiles[platformKey]) {
@@ -93,7 +122,10 @@ async function fetchGitHubData() {
     pub_date: latestRelease.published_at,
     platforms: orderedPlatforms
   };
+  
   await writeFileAsync(CACHE_FILE, JSON.stringify(cacheData));
+  await writeFileAsync(ETAG_FILE, JSON.stringify(etagData));
+  
   return cacheData;
 }
 
@@ -115,16 +147,34 @@ function determinePlatform(filename: string): string {
   return 'unknown';
 }
 
-async function fetchSignature(url: string): Promise<string> {
-  const response = await axios.get(url);
-  return response.data;
+async function fetchSignature(url: string, etagData: ETagData): Promise<string> {
+  try {
+    const response = await axios.get(url, {
+      headers: { 'If-None-Match': etagData.signatures?.[url] || '' },
+      validateStatus: (status) => status >= 200 && status < 300 || status === 304
+    });
+    
+    if (response.status === 304) {
+      const cacheData = cache.get('cacheData') || JSON.parse(await readFileAsync(CACHE_FILE, { encoding: 'utf8' }));
+      const platformKey = determinePlatform(url.split('/').pop() || '');
+      return cacheData?.platforms?.[platformKey]?.signature || '';
+    }
+    
+    if (!etagData.signatures) etagData.signatures = {};
+    etagData.signatures[url] = response.headers.etag;
+    
+    return response.data;
+  } catch (error) {
+    console.error(`Error fetching signature: ${error}`);
+    return '';
+  }
 }
 
 const getTime = () => {
   const now = new Date().toLocaleString("en-US", { timeZone: "Europe/Zurich", hour12: true, hourCycle: 'h12' });
   const [date, timeWithPeriod] = now.split(', ');
   const [month, day, year] = date.split('/');
-  const [time, period] = timeWithPeriod.split(' ');
+  const [time] = timeWithPeriod.split(' ');
   const [hours, minutes, seconds] = time.split(':');
   return `[${day.padStart(2, '0')}.${month.padStart(2, '0')}.${year} ${hours}:${minutes}:${seconds}]`;
 };
@@ -144,22 +194,10 @@ app.get('/', async (req: express.Request, res: express.Response) => {
   console.log(`${getTime()} User-Agent: ${userAgent}`);
 
   try {
-    const latestReleaseResponse = await axios.get(GITHUB_RELEASES_URL, {
-      headers: { 'If-None-Match': etagData.etag || '' },
-      validateStatus: function (status: number) {
-        return status >= 200 && status < 300 || status === 304;
-      }
-    });
-
-    const cacheIsOutdated = latestReleaseResponse.status !== 304 &&
-      latestReleaseResponse.data &&
-      latestReleaseResponse.data[0] &&
-      latestReleaseResponse.data[0].name !== cacheData?.version;
-
-    if (cacheIsOutdated) {
-      console.log(`${getTime()} Cache is outdated or missing, fetching data.`);
+    if (!cacheData || !Object.keys(cacheData).length) {
+      console.log(`${getTime()} Cache is empty, fetching data.`);
       try {
-        cacheData = await fetchGitHubData();
+        cacheData = await fetchGitHubData(etagData);
         cache.set('cacheData', cacheData);
         if (!isBetterUptimeBot) {
           statsData.fetches = (statsData.fetches || 0) + 1;
@@ -167,19 +205,37 @@ app.get('/', async (req: express.Request, res: express.Response) => {
         }
         console.log(`${getTime()} Fetching new data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
       } catch (fetchError: any) {
+        console.error(`${getTime()} Error fetching new data: ${fetchError}`);
         if (fetchError.response && fetchError.response.status === 403) {
           res.json(cacheData || {});
           return;
-        } else {
-          console.error(`${getTime()} Error fetching new data: ${fetchError}`);
         }
       }
     } else {
-      if (!isBetterUptimeBot) {
-        statsData.cacheHits = (statsData.cacheHits || 0) + 1;
-        cache.set('statsData', statsData);
+      try {
+        const updatedData = await fetchGitHubData(etagData);
+        if (updatedData !== cacheData) {
+          cacheData = updatedData;
+          cache.set('cacheData', cacheData);
+          if (!isBetterUptimeBot) {
+            statsData.fetches = (statsData.fetches || 0) + 1;
+            cache.set('statsData', statsData);
+          }
+          console.log(`${getTime()} Fetching new data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
+        } else {
+          if (!isBetterUptimeBot) {
+            statsData.cacheHits = (statsData.cacheHits || 0) + 1;
+            cache.set('statsData', statsData);
+          }
+          console.log(`${getTime()} Using cached data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
+        }
+      } catch (error: any) {
+        console.error(`${getTime()} Error checking for updates: ${error}`);
+        if (!isBetterUptimeBot) {
+          statsData.cacheHits = (statsData.cacheHits || 0) + 1;
+          cache.set('statsData', statsData);
+        }
       }
-      console.log(`${getTime()} Using cached data - C:${statsData.cacheHits || 0} : F:${statsData.fetches || 0}`);
     }
 
     if (!isBetterUptimeBot) {
@@ -187,7 +243,10 @@ app.get('/', async (req: express.Request, res: express.Response) => {
     }
     res.json(cacheData);
   } catch (error: any) {
-    console.error(`${getTime()} SERVER IS RATELIMITED: ${error}`);
+    console.error(`${getTime()} Error handling request: ${error}`);
+    if (error.response && error.response.status === 403) {
+      console.error(`${getTime()} SERVER IS RATELIMITED`);
+    }
     if (!isBetterUptimeBot) {
       statsData.cacheHits = statsData.cacheHits ? statsData.cacheHits + 1 : 1;
       cache.set('statsData', statsData);
